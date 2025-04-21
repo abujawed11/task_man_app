@@ -1,108 +1,3 @@
-// import 'package:flutter/material.dart';
-// import 'login_page.dart';
-//
-//
-// class SignupPage extends StatefulWidget {
-//   const SignupPage({super.key});
-//
-//   @override
-//   State<SignupPage> createState() => _SignupPageState();
-// }
-//
-// class _SignupPageState extends State<SignupPage> {
-//   final TextEditingController _usernameController = TextEditingController();
-//   final TextEditingController _passwordController = TextEditingController();
-//   String _selectedRole = 'Member';
-//
-//   final List<String> _roles = ['Admin', 'Super Admin', 'Team Leader', 'Member'];
-//
-//   // Simulating a mock database (shared with login page manually)
-//   final Map<String, Map<String, String>> mockUsers = {
-//     'Srinivas': {'password': '1234', 'role': 'Admin'},
-//     'Azim': {'password': '1234', 'role': 'Super Admin'},
-//     'Venkat': {'password': '1234', 'role': 'Team Leader'},
-//     'Abubakar': {'password': '1234', 'role': 'Member'},
-//     'Ayaan': {'password': '1234', 'role': 'Member'},
-//   };
-//
-//   void _signup() {
-//     String username = _usernameController.text.trim();
-//     String password = _passwordController.text.trim();
-//
-//     if (username.isEmpty || password.isEmpty) {
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         const SnackBar(content: Text('All fields are required')),
-//       );
-//       return;
-//     }
-//
-//     if (mockUsers.containsKey(username)) {
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         const SnackBar(content: Text('Username already exists!')),
-//       );
-//       return;
-//     }
-//
-//     // Add user to mock database (NOTE: This won't persist)
-//     mockUsers[username] = {'password': password, 'role': _selectedRole};
-//
-//     ScaffoldMessenger.of(context).showSnackBar(
-//       const SnackBar(content: Text('Signup successful! Please login.')),
-//     );
-//
-//     //Navigator.pop(context); // Go back to LoginPage
-//     Navigator.pushReplacement(
-//       context,
-//       MaterialPageRoute(builder: (context) => const LoginPage()),
-//     );
-//
-//   }
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       appBar: AppBar(title: const Text('Sign Up')),
-//       body: Padding(
-//         padding: const EdgeInsets.all(24.0),
-//         child: Column(
-//           mainAxisAlignment: MainAxisAlignment.center,
-//           children: [
-//             TextField(
-//               controller: _usernameController,
-//               decoration: const InputDecoration(labelText: 'Username'),
-//             ),
-//             const SizedBox(height: 10),
-//             TextField(
-//               controller: _passwordController,
-//               obscureText: true,
-//               decoration: const InputDecoration(labelText: 'Password'),
-//             ),
-//             const SizedBox(height: 10),
-//             DropdownButtonFormField<String>(
-//               value: _selectedRole,
-//               decoration: const InputDecoration(labelText: 'Select Role'),
-//               items: _roles.map((String role) {
-//                 return DropdownMenuItem(value: role, child: Text(role));
-//               }).toList(),
-//               onChanged: (value) {
-//                 setState(() {
-//                   _selectedRole = value!;
-//                 });
-//               },
-//             ),
-//             const SizedBox(height: 20),
-//             ElevatedButton(
-//               onPressed: _signup,
-//               child: const Text('Sign Up'),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }
-//----------------------------------------------------
-
 import 'package:flutter/material.dart';
 import '../api_service.dart';
 import 'login_page.dart';
@@ -196,6 +91,15 @@ class _SignupPageState extends State<SignupPage> {
             ElevatedButton(
               onPressed: _signup,
               child: const Text('Sign Up'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginPage()),
+                );
+              },
+              child: const Text('Already have an account? Login here'),
             ),
           ],
         ),

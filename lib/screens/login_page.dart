@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dashboard_page.dart';
-import 'signup_page.dart'; // <-- for navigation to signup
+import 'signup_page.dart';
+import '../api_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -16,16 +17,7 @@ class _LoginPageState extends State<LoginPage> {
 
   final List<String> _roles = ['Admin', 'Super Admin', 'Team Leader', 'Member'];
 
-  // 🔒 Mock user database
-  final Map<String, Map<String, String>> mockUsers = {
-    'Srinivas': {'password': '1234', 'role': 'Admin'},
-    'Azim': {'password': '1234', 'role': 'Super Admin'},
-    'Venkat': {'password': '1234', 'role': 'Team Leader'},
-    'Abubakar': {'password': '1234', 'role': 'Member'},
-    'Ayaan': {'password': '1234', 'role': 'Member'},
-  };
-
-  void _login() {
+  void _login() async {
     String username = _usernameController.text.trim();
     String password = _passwordController.text.trim();
 
@@ -36,37 +28,21 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    if (!mockUsers.containsKey(username)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User does not exist!')),
-      );
-      return;
-    }
+    String result = await ApiService.loginUser(username, password, _selectedRole);
 
-    if (mockUsers[username]!['password'] != password) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Incorrect password!')),
-      );
-      return;
-    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result)));
 
-    if (mockUsers[username]!['role'] != _selectedRole) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$username is not a $_selectedRole!')),
-      );
-      return;
-    }
-
-    // ✅ Successful Login
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => DashboardPage(
-          username: username,
-          role: _selectedRole,
+    if (result == 'Login successful') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DashboardPage(
+            username: username,
+            role: _selectedRole,
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   @override

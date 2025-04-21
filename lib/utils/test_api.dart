@@ -11,7 +11,7 @@ class _TestApiPageState extends State<TestApiPage> {
   String apiResult = "Press the button to call API";
 
   Future<void> callApi() async {
-    final url = Uri.parse('https://jsonplaceholder.typicode.com/todos/1');
+    final url = Uri.parse('http://127.0.0.1:5000');
 
     try {
       final response = await http.get(url);
