@@ -41,15 +41,15 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   List<Task> get _visibleTasks {
-    print('Role of user is: ' + widget.role);
     if (widget.role == admin || widget.role == superAdmin)
     {
-      print('user is admin');
       return _allTasks;
     }
-    else {
-      print('user is non admin');
-      return _allTasks.where((task) => task.assignedTo == widget.username).toList();
+    else
+    {
+      return _allTasks.where((task) =>
+      (task.assignedTo == widget.username
+          || task.assignedBy == widget.username)).toList();
     }
   }
 
