@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import mysql.connector
+from flask_sqlalchemy import SQLAlchemy
+import os
 import uuid
 import logging
 from datetime import datetime
@@ -12,13 +13,42 @@ CORS(app)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# DB config to reuse
-db_config = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': '',
-    'database': 'task_db'
-}
+# PostgreSQL config via SQLAlchemy
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize database
+db = SQLAlchemy(app)
+
+# ---------------- MODELS ----------------
+class User(db.Model):
+    __tablename__ = 'users'
+    user_id = db.Column(db.String(100), primary_key=True)
+    username = db.Column(db.String(100), nullable=False, unique=True)
+    email = db.Column(db.String(100), nullable=False)
+    phone = db.Column(db.String(20))
+    password = db.Column(db.String(100), nullable=False)
+    role = db.Column(db.String(50))
+    fcm_token = db.Column(db.String(200))
+
+
+class Task(db.Model):
+    __tablename__ = 'tasks'
+    task_id = db.Column(db.String(100), primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    assigned_by = db.Column(db.String(100))
+    assigned_to = db.Column(db.String(100))
+    deadline = db.Column(db.Date)
+    priority = db.Column(db.String(50))
+    status = db.Column(db.String(50))
+
+
+@app.route('/create_tables')
+def create_tables():
+    db.create_all()
+    return "✅ Tables created successfully!"
+
 
 @app.route('/')
 def home():
@@ -27,77 +57,55 @@ def home():
 # ---------------- SIGNUP ----------------
 @app.route('/signup', methods=['POST'])
 def signup():
-    conn = None
-    cursor = None
     try:
         data = request.get_json()
         required_fields = ['username', 'email', 'phone', 'password', 'role']
         if not all(field in data for field in required_fields):
             return jsonify({'message': 'Missing required fields'}), 400
 
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
-
-        cursor.execute("SELECT * FROM users WHERE username = %s", (data['username'],))
-        if cursor.fetchone():
+        existing_user = User.query.filter_by(username=data['username']).first()
+        if existing_user:
             return jsonify({'message': 'User already exists'}), 409
 
-        user_id = str(uuid.uuid4())
-        cursor.execute("""
-            INSERT INTO users (user_id, username, email, phone, password, role, fcm_token)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (
-            user_id, data['username'], data['email'], data['phone'],
-            data['password'], data['role'], data.get('fcm_token', '')
-        ))
-        conn.commit()
+        new_user = User(
+            user_id=str(uuid.uuid4()),
+            username=data['username'],
+            email=data['email'],
+            phone=data['phone'],
+            password=data['password'],
+            role=data['role'],
+            fcm_token=data.get('fcm_token', '')
+        )
+        db.session.add(new_user)
+        db.session.commit()
         return jsonify({'message': 'Signup successful'}), 200
     except Exception as e:
+        logger.error(f"Signup error: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 # ---------------- LOGIN ----------------
 @app.route('/login', methods=['POST'])
 def login():
-    conn = None
-    cursor = None
     try:
         data = request.get_json()
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
+        user = User.query.filter_by(username=data['username'], password=data['password']).first()
 
-        cursor.execute("""
-            SELECT user_id, username, email, phone, password, role, fcm_token
-            FROM users WHERE username = %s AND password = %s
-        """, (data['username'], data['password']))
-
-        user = cursor.fetchone()
         if user:
             return jsonify({
                 'message': 'Login successful',
-                'user_id': user['user_id'],
-                'username': user['username'],
-                'role': user['role']
+                'user_id': user.user_id,
+                'username': user.username,
+                'role': user.role
             }), 200
 
         return jsonify({'message': 'Invalid username or password'}), 401
     except Exception as e:
+        logger.error(f"Login error: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 # ---------------- CREATE TASK ----------------
 @app.route('/create_task', methods=['POST'])
 def create_task():
-    conn = None
-    cursor = None
     try:
         data = request.get_json()
         logger.debug(f"Received data: {data}")
@@ -106,198 +114,72 @@ def create_task():
         if not all(field in data for field in required_fields):
             return jsonify({'success': False, 'message': 'Missing required fields'}), 400
 
-        task_id = str(uuid.uuid4())
-        title = data['title']
-        description = data.get('description', '')
-        assigned_by = data['assigned_by']
-        assigned_to = data['assigned_to']
-        deadline = data['deadline']
-        priority = data['priority']
-        status = data.get('status', 'Pending')
+        new_task = Task(
+            task_id=str(uuid.uuid4()),
+            title=data['title'],
+            description=data.get('description', ''),
+            assigned_by=data['assigned_by'],
+            assigned_to=data['assigned_to'],
+            deadline=datetime.strptime(data['deadline'], '%Y-%m-%d').date(),
+            priority=data['priority'],
+            status=data.get('status', 'Pending')
+        )
+        db.session.add(new_task)
+        db.session.commit()
 
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            INSERT INTO tasks (task_id, title, description, assigned_by, assigned_to, deadline, priority, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (task_id, title, description, assigned_by, assigned_to, deadline, priority, status))
-
-        conn.commit()
-        logger.info(f"Task created successfully: {task_id}")
+        logger.info(f"Task created successfully: {new_task.task_id}")
         return jsonify({
             'success': True,
             'message': 'Task created successfully',
-            'task_id': task_id
+            'task_id': new_task.task_id
         }), 201
     except Exception as e:
         logger.error(f"Error creating task: {str(e)}")
         return jsonify({'success': False, 'message': f"Error creating task: {str(e)}"}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 # ---------------- GET USERS ----------------
 @app.route('/users', methods=['GET'])
 def get_users():
-    conn = None
-    cursor = None
     try:
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor()
-        cursor.execute("SELECT username FROM users")
-        users = [row[0] for row in cursor.fetchall()]
-        return jsonify(users), 200
+        users = User.query.with_entities(User.username).all()
+        return jsonify([user.username for user in users]), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 # ---------------- GET TASKS ----------------
-# @app.route('/tasks', methods=['GET'])
-# def get_tasks():
-#     conn = None
-#     cursor = None
-#     try:
-#         username = request.args.get('username')
-#         role = request.args.get('role')
-
-#         if not username or not role:
-#             return jsonify({'error': 'Missing username or role parameters'}), 400
-
-#         conn = mysql.connector.connect(**db_config)
-#         cursor = conn.cursor(dictionary=True)
-
-#         base_query = """
-#             SELECT 
-#                 t.task_id,
-#                 t.title,
-#                 t.description,
-#                 t.deadline,
-#                 t.priority,
-#                 t.status,
-#                 t.created_at,
-#                 assigner.username AS assigned_by,
-#                 assignee.username AS assigned_to
-#             FROM tasks t
-#             JOIN users assigner ON t.assigned_by = assigner.user_id
-#             JOIN users assignee ON t.assigned_to = assignee.user_id
-#         """
-
-#         if role in ['Admin', 'Super Admin']:
-#             query = f"{base_query} ORDER BY t.deadline ASC"
-#             cursor.execute(query)
-#         else:
-#             query = f"{base_query} WHERE assignee.username = %s ORDER BY t.deadline ASC"
-#             cursor.execute(query, (username,))
-
-#         tasks = cursor.fetchall()
-#         formatted_tasks = []
-#         for task in tasks:
-#             formatted_tasks.append({
-#                 'task_id': task['task_id'],
-#                 'title': task['title'],
-#                 'description': task['description'],
-#                 'deadline': task['deadline'].strftime('%Y-%m-%d') if task['deadline'] else None,
-#                 'priority': task['priority'],
-#                 'status': task['status'],
-#                 'assigned_by': task['assigned_by'],
-#                 'assigned_to': task['assigned_to'],
-#                 'created_at': task['created_at'].strftime('%Y-%m-%d %H:%M:%S') if task['created_at'] else None
-#             })
-
-#         return jsonify(formatted_tasks), 200
-
-#     except mysql.connector.Error as err:
-#         logger.error(f"Database error: {err}")
-#         return jsonify({'error': 'Database error'}), 500
-#     except Exception as e:
-#         logger.error(f"Unexpected error: {e}")
-#         return jsonify({'error': 'Server error'}), 500
-#     finally:
-#         if cursor:
-#             cursor.close()
-#         if conn:
-#             conn.close()
-
 @app.route('/tasks', methods=['GET'])
 def get_tasks():
     try:
-        # Get query parameters
         username = request.args.get('username')
         role = request.args.get('role')
 
         if not username or not role:
             return jsonify({'error': 'Missing username or role parameters'}), 400
 
-        # Create new database connection
-        conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="",
-            database="task_db"
-        )
-        cursor = conn.cursor(dictionary=True)
-
-        # Base query
-        base_query = """
-            SELECT 
-                task_id,
-                title,
-                description,
-                deadline,
-                priority,
-                status,
-                assigned_by,
-                assigned_to
-            FROM tasks
-        """
-
-        # Add role-based filtering
         if role in ['Admin', 'Super Admin']:
-            query = f"{base_query} ORDER BY deadline ASC"
-            cursor.execute(query)
+            tasks = Task.query.order_by(Task.deadline.asc()).all()
         else:
-            query = f"{base_query} WHERE assigned_to = %s OR assigned_by = %s ORDER BY deadline ASC"
-            cursor.execute(query, (username, username))
+            tasks = Task.query.filter(
+                (Task.assigned_to == username) | (Task.assigned_by == username)
+            ).order_by(Task.deadline.asc()).all()
 
-        tasks = cursor.fetchall()
-
-        # Format response
-        formatted_tasks = []
-        for task in tasks:
-            formatted_tasks.append({
-                'task_id': task['task_id'],
-                'title': task['title'],
-                'description': task['description'],
-                'deadline': task['deadline'].strftime('%Y-%m-%d') if task['deadline'] else None,
-                'priority': task['priority'],
-                'status': task['status'],
-                'assigned_by': task['assigned_by'],
-                'assigned_to': task['assigned_to']
-            })
+        formatted_tasks = [
+            {
+                'task_id': task.task_id,
+                'title': task.title,
+                'description': task.description,
+                'deadline': task.deadline.strftime('%Y-%m-%d') if task.deadline else None,
+                'priority': task.priority,
+                'status': task.status,
+                'assigned_by': task.assigned_by,
+                'assigned_to': task.assigned_to
+            } for task in tasks
+        ]
 
         return jsonify(formatted_tasks), 200
-
-    except mysql.connector.Error as err:
-        print(f"Database error: {err}")
-        return jsonify({'error': 'Database error', 'details': str(err)}), 500
-
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        logger.error(f"Error fetching tasks: {str(e)}")
         return jsonify({'error': 'Server error', 'details': str(e)}), 500
-
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
 
 # ---------------- MAIN ----------------
 if __name__ == '__main__':
