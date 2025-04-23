@@ -1,23 +1,34 @@
 class Task {
-  String id;
-  String title;
-  String description;
-  String priority;
-  DateTime deadline;
-  String assignedTo;  // The member assigned to this task (can be empty initially)
-  String assignedBy;  // Who assigned the task (can be 'Client', 'Admin', etc.)
-  String status;      // 'Pending' or 'Assigned'
-  String createdBy;   // The client, admin, or superadmin who created the task
+  final String taskId;
+  final String title;
+  final String description;
+  final String assignedBy;
+  final String assignedTo;
+  final DateTime deadline;
+  final String priority;
+  final String status;
 
   Task({
-    required this.id,
+    required this.taskId,
     required this.title,
     required this.description,
-    required this.priority,
-    required this.deadline,
-    required this.assignedTo,
     required this.assignedBy,
+    required this.assignedTo,
+    required this.deadline,
+    required this.priority,
     required this.status,
-    required this.createdBy,
   });
+
+  factory Task.fromJson(Map<String, dynamic> json) {
+    return Task(
+      taskId: json['task_id'],
+      title: json['title'],
+      description: json['description'] ?? '',
+      assignedBy: json['assigned_by'],
+      assignedTo: json['assigned_to'],
+      deadline: DateTime.parse(json['deadline']),
+      priority: json['priority'],
+      status: json['status'],
+    );
+  }
 }
