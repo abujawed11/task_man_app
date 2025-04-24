@@ -8,9 +8,9 @@ import '../screens/assign_task_page.dart';
 import 'login_page.dart';
 import 'package:intl/intl.dart';
 
-
 const admin = 'Admin';
 const superAdmin = 'Super Admin';
+
 class DashboardPage extends StatefulWidget {
   final String username;
   final String role;
@@ -22,7 +22,6 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-
   static const String baseUrl = 'http://10.20.1.54:5000';
   List<Task> _allTasks = [];
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
@@ -41,15 +40,13 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   List<Task> get _visibleTasks {
-    if (widget.role == admin || widget.role == superAdmin)
-    {
+    if (widget.role == admin || widget.role == superAdmin) {
       return _allTasks;
-    }
-    else
-    {
-      return _allTasks.where((task) =>
-      (task.assignedTo == widget.username
-          || task.assignedBy == widget.username)).toList();
+    } else {
+      return _allTasks
+          .where((task) =>
+      (task.assignedTo == widget.username || task.assignedBy == widget.username))
+          .toList();
     }
   }
 
@@ -62,17 +59,16 @@ class _DashboardPageState extends State<DashboardPage> {
       );
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        print('User granted permission');
+        debugPrint('User granted permission');
       } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
-        print('User granted provisional permission');
+        debugPrint('User granted provisional permission');
       } else {
-        print('User declined or has not accepted permission');
+        debugPrint('User declined or has not accepted permission');
       }
     } catch (e) {
-      print('Error requesting notification permissions: $e');
+      debugPrint('Error requesting notification permissions: $e');
     }
   }
-
 
   Future<void> _loadTasks() async {
     setState(() => _isLoading = true);
@@ -154,7 +150,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: Text('${widget.role} Dashboard'),
         centerTitle: true,
@@ -162,7 +158,7 @@ class _DashboardPageState extends State<DashboardPage> {
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.blue[700]!, Colors.blue[500]!],
+              colors: [Colors.blue.shade700, Colors.blue.shade500],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -187,6 +183,7 @@ class _DashboardPageState extends State<DashboardPage> {
       body: Column(
         children: [
           _buildWelcomeCard(),
+          _buildStatsHeader(),
           Expanded(
             child: RefreshIndicator(
               key: _refreshIndicatorKey,
@@ -216,7 +213,7 @@ class _DashboardPageState extends State<DashboardPage> {
             top: 8,
             child: Container(
               padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Colors.red,
                 shape: BoxShape.circle,
               ),
@@ -235,37 +232,73 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildWelcomeCard() {
-    return Card(
+    return Container(
       margin: const EdgeInsets.all(16),
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade600, Colors.blue.shade400],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withOpacity(0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Welcome back, ${widget.username}! 👋',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.verified_user, size: 16, color: Colors.blue),
-                const SizedBox(width: 4),
-                Text(
-                  'Role: ${widget.role}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
+                CircleAvatar(
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  child: const Icon(Icons.person, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Welcome back,',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                      ),
+                      Text(
+                        widget.username,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                widget.role,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                ),
+              ),
             ),
             if (_showNotifications) _buildNotificationsPanel(),
           ],
@@ -274,19 +307,75 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  Widget _buildStatsHeader() {
+    final completedTasks = _visibleTasks.where((t) => t.status == 'Completed').length;
+    final pendingTasks = _visibleTasks.where((t) => t.status == 'Pending').length;
+    final inProgressTasks = _visibleTasks.where((t) => t.status == 'In Progress').length;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildStatItem(Icons.check_circle, 'Completed', completedTasks, Colors.green),
+          _buildStatItem(Icons.access_time, 'Pending', pendingTasks, Colors.orange),
+          _buildStatItem(Icons.autorenew, 'In Progress', inProgressTasks, Colors.blue),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(IconData icon, String label, int count, Color color) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: color),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          count.toString(),
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade600,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildNotificationsPanel() {
     return Column(
       children: [
-        const Divider(height: 24),
+        const Divider(height: 24, color: Colors.white),
         const Text(
-          'Notifications',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          'Recent Notifications',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         const SizedBox(height: 8),
-        ..._notifications.map((notification) => ListTile(
+        ..._notifications.take(3).map((notification) => ListTile(
           dense: true,
-          leading: const Icon(Icons.notifications_active, color: Colors.blue),
-          title: Text(notification),
+          leading: const Icon(Icons.notifications_active, color: Colors.white),
+          title: Text(
+            notification,
+            style: const TextStyle(color: Colors.white),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
           onTap: () => _loadTasks(),
         )),
       ],
@@ -298,16 +387,26 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.assignment, size: 64, color: Colors.grey[400]),
+          Icon(Icons.assignment, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           Text(
             'No tasks available',
             style: TextStyle(
               fontSize: 18,
-              color: Colors.grey[600],
+              color: Colors.grey.shade600,
             ),
           ),
-          if (widget.role == 'Admin' || widget.role == 'Super Admin')
+          const SizedBox(height: 8),
+          Text(
+            widget.role == admin || widget.role == superAdmin
+                ? 'Tap + to create a new task'
+                : 'You have no tasks assigned yet',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade500,
+            ),
+          ),
+          if (widget.role == admin || widget.role == superAdmin)
             TextButton(
               onPressed: () => _refreshIndicatorKey.currentState?.show(),
               child: const Text('Refresh'),
@@ -318,9 +417,10 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildTaskList() {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       itemCount: _visibleTasks.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final task = _visibleTasks[index];
         return _buildTaskCard(task);
@@ -331,9 +431,10 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _buildTaskCard(Task task) {
     final deadline = DateFormat('MMM dd, yyyy').format(task.deadline);
     final isUrgent = task.priority == 'High';
+    final isCompleted = task.status == 'Completed';
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: EdgeInsets.zero,
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
@@ -352,9 +453,11 @@ class _DashboardPageState extends State<DashboardPage> {
                   Expanded(
                     child: Text(
                       task.title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
+                        decoration: isCompleted ? TextDecoration.lineThrough : null,
+                        color: isCompleted ? Colors.grey : Colors.black,
                       ),
                     ),
                   ),
@@ -366,44 +469,53 @@ class _DashboardPageState extends State<DashboardPage> {
                 task.description,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: Colors.grey[600]),
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  decoration: isCompleted ? TextDecoration.lineThrough : null,
+                ),
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Icon(Icons.person, size: 16, color: Colors.grey),
+                  Icon(Icons.person, size: 16, color: Colors.grey.shade600),
                   const SizedBox(width: 4),
                   Text(
                     'Assigned by: ${task.assignedBy}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
                   ),
                 ],
               ),
-             // if (widget.role == admin || widget.role == superAdmin)
-                ...[
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(Icons.person_outline, size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Assigned to: ${task.assignedTo}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.person_outline, size: 16, color: Colors.grey.shade600),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Assigned to: ${task.assignedTo}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
                     ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                      Icon(Icons.calendar_today, size: 16, color: Colors.grey.shade600),
                       const SizedBox(width: 4),
                       Text(
                         deadline,
-                        style: TextStyle(color: Colors.grey[600]),
+                        style: TextStyle(
+                          color: isUrgent && !isCompleted ? Colors.red : Colors.grey.shade600,
+                          fontWeight: isUrgent && !isCompleted ? FontWeight.bold : null,
+                        ),
                       ),
                     ],
                   ),
@@ -436,8 +548,9 @@ class _DashboardPageState extends State<DashboardPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Text(
         priority,
@@ -451,21 +564,47 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildStatusChip(String status) {
-    return Chip(
-      label: Text(
-        status,
-        style: const TextStyle(fontSize: 12),
+    Color backgroundColor;
+    Color textColor;
+
+    switch (status.toLowerCase()) {
+      case 'completed':
+        backgroundColor = Colors.green.shade100;
+        textColor = Colors.green.shade800;
+        break;
+      case 'in progress':
+        backgroundColor = Colors.blue.shade100;
+        textColor = Colors.blue.shade800;
+        break;
+      case 'pending':
+        backgroundColor = Colors.orange.shade100;
+        textColor = Colors.orange.shade800;
+        break;
+      default:
+        backgroundColor = Colors.grey.shade100;
+        textColor = Colors.grey.shade800;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(20),
       ),
-      backgroundColor: _getStatusColor(status),
-      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      child: Text(
+        status,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 
   Widget? _buildFloatingActionButton() {
-  //  if (widget.role == 'admin' || widget.role == 'Super Admin')
-    {
-      return FloatingActionButton(
+    if (widget.role == admin || widget.role == superAdmin) {
+      return FloatingActionButton.extended(
         onPressed: () async {
           final result = await Navigator.push(
             context,
@@ -475,24 +614,15 @@ class _DashboardPageState extends State<DashboardPage> {
           );
           if (result == true) _loadTasks();
         },
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('New Task'),
         backgroundColor: Colors.blue,
         elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
       );
     }
     return null;
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'completed':
-        return Colors.green[100]!;
-      case 'in progress':
-        return Colors.blue[100]!;
-      case 'pending':
-        return Colors.orange[100]!;
-      default:
-        return Colors.grey[100]!;
-    }
   }
 }
