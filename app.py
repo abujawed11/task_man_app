@@ -18,7 +18,7 @@ db_config = {
     'user': 'sql12775220',
     'password': 'isKYTGmuwt',
     'database': 'sql12775220',
-    port=3306
+    'port' : 3306
 }
 
 @app.route('/')
