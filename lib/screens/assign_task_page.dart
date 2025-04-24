@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 // Global base URL for easy updates
-const String baseUrl = 'http://10.20.1.54:5000';
+const String baseUrl = 'https://task-man-app-2.onrender.com';
 
 class AssignTaskPage extends StatefulWidget {
   final String assigner;

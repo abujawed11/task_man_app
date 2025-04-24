@@ -22,7 +22,7 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  static const String baseUrl = 'http://10.20.1.54:5000';
+  static const String baseUrl = 'https://task-man-app-2.onrender.com';
   List<Task> _allTasks = [];
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final List<String> _notifications = [];

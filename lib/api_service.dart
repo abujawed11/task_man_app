@@ -6,7 +6,7 @@ import 'dart:async';
 
 
 class ApiService {
-  static const String baseUrl = 'http://10.20.1.54:5000'; // Updated to your teammate's IP and port
+  static const String baseUrl = 'https://task-man-app-2.onrender.com'; // Updated to your teammate's IP and port
 
 
   static Future<String> signupUser(String username, String email, String phone, String password, String role, String fcmToken) async {
