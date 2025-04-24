@@ -14,10 +14,11 @@ logger = logging.getLogger(__name__)
 
 # DB config to reuse
 db_config = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': '',
-    'database': 'task_db'
+    'host': 'sql12.freesqldatabase.com',
+    'user': 'sql12775220',
+    'password': 'isKYTGmuwt',
+    'database': 'sql12775220',
+    port=3306
 }
 
 @app.route('/')
@@ -234,6 +235,27 @@ def get_tasks():
             cursor.close()
         if conn:
             conn.close()
+            
+
+#------------check_DB---------------
+
+@app.route('/test_db')
+def test_db():
+    conn = None
+    cursor = None  # Initialize cursor to None
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        cursor.execute("SHOW TABLES")
+        tables = [table[0] for table in cursor.fetchall()]
+        return jsonify({'tables': tables}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()  # Close cursor if it's initialized
+        if conn:
+            conn.close()  # Close the connection if it's initialized
 
 
 # ---------------- MAIN ----------------
