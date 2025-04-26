@@ -29,7 +29,14 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      final fcmToken = await FirebaseMessaging.instance.getToken();
+      String? fcmToken;
+      try {
+        fcmToken = await FirebaseMessaging.instance.getToken();
+        print('FCM Token: $fcmToken'); // Debug print
+      } catch (e) {
+        print('Error retrieving FCM token: $e');
+        fcmToken = ''; // Fallback to empty string if FCM token retrieval fails
+      }
 
       final result = await ApiService.loginUser(username, password, fcmToken ?? '');
 

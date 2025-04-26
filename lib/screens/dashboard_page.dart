@@ -1,15 +1,16 @@
+import 'dart:async'; // Required for Timer
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+
 import '../models/task.dart';
 import '../screens/assign_task_page.dart';
 import 'login_page.dart';
-import 'package:intl/intl.dart';
 
-const admin = 'Admin';
-const superAdmin = 'Super Admin';
+// Global base URL
+const String baseUrl = 'http://192.168.1.120:5000';
 
 class DashboardPage extends StatefulWidget {
   final String username;
@@ -22,112 +23,122 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  static const String baseUrl = 'https://task-man-app-2.onrender.com';
-  List<Task> _allTasks = [];
+  late List<Task> _visibleTasks; // Declare _visibleTasks
+  Timer? _pollingTimer; // Declare _pollingTimer
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final List<String> _notifications = [];
   bool _showNotifications = false;
-  bool _isLoading = true;
-  final _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
 
   @override
   void initState() {
     super.initState();
+    _visibleTasks = []; // Initialize _visibleTasks
     _setupFirebaseMessaging();
     _requestNotificationPermissions();
     _getFCMToken();
     _loadTasks();
+    _startPolling(); // Start polling for task updates
   }
 
-  List<Task> get _visibleTasks {
-    if (widget.role == admin || widget.role == superAdmin) {
-      return _allTasks;
-    } else {
-      return _allTasks
-          .where((task) =>
-      (task.assignedTo == widget.username || task.assignedBy == widget.username))
-          .toList();
-    }
+  @override
+  void dispose() {
+    _pollingTimer?.cancel(); // Cancel polling timer to prevent memory leaks
+    super.dispose();
   }
 
-  Future<void> _requestNotificationPermissions() async {
-    try {
-      final settings = await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        debugPrint('User granted permission');
-      } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
-        debugPrint('User granted provisional permission');
-      } else {
-        debugPrint('User declined or has not accepted permission');
-      }
-    } catch (e) {
-      debugPrint('Error requesting notification permissions: $e');
-    }
+  // Start polling to periodically refresh tasks
+  void _startPolling() {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      _loadTasks();
+    });
   }
 
+  // Load tasks from backend
   Future<void> _loadTasks() async {
-    setState(() => _isLoading = true);
+    final url = Uri.parse('$baseUrl/tasks/${widget.username}?role=${widget.role}');
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/tasks?username=${widget.username}&role=${widget.role}'),
-      );
-
+      final response = await http.get(url);
       if (response.statusCode == 200) {
-        final List<dynamic> responseData = jsonDecode(response.body);
+        final List<dynamic> data = json.decode(response.body);
         setState(() {
-          _allTasks = responseData.map((task) => Task.fromJson(task)).toList();
-          _isLoading = false;
+          _visibleTasks = data.map((json) => Task.fromJson(json)).toList();
         });
+        print('Tasks loaded: ${data.length}'); // Debug
       } else {
-        throw Exception('Failed to load tasks');
+        print('Failed to load tasks: ${response.statusCode} ${response.body}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load tasks: ${response.statusCode}')),
+        );
       }
     } catch (e) {
-      setState(() => _isLoading = false);
+      print('Error loading tasks: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading tasks: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Error loading tasks: $e')),
       );
     }
   }
 
+  // Get FCM token and send to backend
   Future<void> _getFCMToken() async {
     String? token = await _firebaseMessaging.getToken();
     if (token != null) {
-      await http.post(
-        Uri.parse('$baseUrl/update_fcm_token'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'username': widget.username,
-          'fcm_token': token,
-        }),
-      );
+      print('FCM token: $token'); // Debug
+      final url = Uri.parse('$baseUrl/update_fcm_token');
+      try {
+        final response = await http.post(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'username': widget.username,
+            'fcm_token': token,
+          }),
+        );
+        if (response.statusCode != 200) {
+          print('Failed to update FCM token: ${response.statusCode} ${response.body}');
+        }
+      } catch (e) {
+        print('Error updating FCM token: $e');
+      }
     }
   }
 
+  // Request notification permissions
+  Future<void> _requestNotificationPermissions() async {
+    await _firebaseMessaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+  }
+
+  // Setup FCM listeners
   void _setupFirebaseMessaging() {
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      if (message.data['type'] == 'new_task') {
-        _loadTasks();
-      }
       final notification = message.notification;
       if (notification != null) {
+        print('Foreground notification: ${notification.title}'); // Debug
         _addNotification(
           notification.title ?? 'New Task',
-          notification.body ?? 'You have a new task',
+          notification.body ?? 'You have a new notification',
         );
+        _loadTasks(); // Refresh tasks
       }
     });
 
-    FirebaseMessaging.onMessageOpenedApp.listen((_) => _loadTasks());
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      final notification = message.notification;
+      if (notification != null) {
+        print('Notification opened: ${notification.title}'); // Debug
+        _addNotification(
+          notification.title ?? 'New Task',
+          notification.body ?? 'You have a new notification',
+        );
+        _loadTasks();
+      }
+    });
   }
 
+  // Add notification to list
   void _addNotification(String title, String body) {
     setState(() {
       _notifications.insert(0, '$title: $body');
@@ -137,8 +148,9 @@ class _DashboardPageState extends State<DashboardPage> {
     });
   }
 
+  // Logout user
   void _logout(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
+    SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     Navigator.pushAndRemoveUntil(
       context,
@@ -147,482 +159,188 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  // Toggle notifications panel
+  void _toggleNotifications() {
+    setState(() {
+      _showNotifications = !_showNotifications;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: Text('${widget.role} Dashboard'),
-        centerTitle: true,
-        elevation: 0,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Colors.blue.shade700, Colors.blue.shade500],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-              _refreshIndicatorKey.currentState?.show();
-              _loadTasks();
-            },
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: _toggleNotifications,
+              ),
+              if (_notifications.isNotEmpty)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      _notifications.length.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
           ),
-          _buildNotificationIcon(),
           IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white),
+            icon: const Icon(Icons.logout),
             onPressed: () => _logout(context),
           ),
         ],
       ),
-      floatingActionButton: _buildFloatingActionButton(),
       body: Column(
         children: [
-          _buildWelcomeCard(),
-          _buildStatsHeader(),
-          Expanded(
-            child: RefreshIndicator(
-              key: _refreshIndicatorKey,
-              onRefresh: _loadTasks,
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _visibleTasks.isEmpty
-                  ? _buildEmptyState()
-                  : _buildTaskList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotificationIcon() {
-    return Stack(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.notifications, color: Colors.white),
-          onPressed: () => setState(() => _showNotifications = !_showNotifications),
-        ),
-        if (_notifications.isNotEmpty)
-          Positioned(
-            right: 8,
-            top: 8,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                _notifications.length.toString(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildWelcomeCard() {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: LinearGradient(
-          colors: [Colors.blue.shade600, Colors.blue.shade400],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.blue.withOpacity(0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+          if (_showNotifications) _buildNotificationsPanel(),
+          Container(
+            padding: const EdgeInsets.all(16),
+            alignment: Alignment.centerLeft,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  backgroundColor: Colors.white.withOpacity(0.2),
-                  child: const Icon(Icons.person, color: Colors.white),
+                Text(
+                  'Welcome, ${widget.username} 👋',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Welcome back,',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.white.withOpacity(0.9),
-                        ),
-                      ),
-                      Text(
-                        widget.username,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: 4),
+                Text(
+                  'Role: ${widget.role}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                widget.role,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _loadTasks,
+              child: _visibleTasks.isEmpty
+                  ? const Center(
+                child: Text(
+                  'No tasks assigned yet',
+                  style: TextStyle(fontSize: 16),
                 ),
-              ),
-            ),
-            if (_showNotifications) _buildNotificationsPanel(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatsHeader() {
-    final completedTasks = _visibleTasks.where((t) => t.status == 'Completed').length;
-    final pendingTasks = _visibleTasks.where((t) => t.status == 'Pending').length;
-    final inProgressTasks = _visibleTasks.where((t) => t.status == 'In Progress').length;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildStatItem(Icons.check_circle, 'Completed', completedTasks, Colors.green),
-          _buildStatItem(Icons.access_time, 'Pending', pendingTasks, Colors.orange),
-          _buildStatItem(Icons.autorenew, 'In Progress', inProgressTasks, Colors.blue),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatItem(IconData icon, String label, int count, Color color) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: color),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          count.toString(),
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey.shade600,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNotificationsPanel() {
-    return Column(
-      children: [
-        const Divider(height: 24, color: Colors.white),
-        const Text(
-          'Recent Notifications',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        const SizedBox(height: 8),
-        ..._notifications.take(3).map((notification) => ListTile(
-          dense: true,
-          leading: const Icon(Icons.notifications_active, color: Colors.white),
-          title: Text(
-            notification,
-            style: const TextStyle(color: Colors.white),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          onTap: () => _loadTasks(),
-        )),
-      ],
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.assignment, size: 64, color: Colors.grey.shade400),
-          const SizedBox(height: 16),
-          Text(
-            'No tasks available',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey.shade600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            widget.role == admin || widget.role == superAdmin
-                ? 'Tap + to create a new task'
-                : 'You have no tasks assigned yet',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade500,
-            ),
-          ),
-          if (widget.role == admin || widget.role == superAdmin)
-            TextButton(
-              onPressed: () => _refreshIndicatorKey.currentState?.show(),
-              child: const Text('Refresh'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTaskList() {
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      itemCount: _visibleTasks.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final task = _visibleTasks[index];
-        return _buildTaskCard(task);
-      },
-    );
-  }
-
-  Widget _buildTaskCard(Task task) {
-    final deadline = DateFormat('MMM dd, yyyy').format(task.deadline);
-    final isUrgent = task.priority == 'High';
-    final isCompleted = task.status == 'Completed';
-
-    return Card(
-      margin: EdgeInsets.zero,
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () {}, // Add task details navigation if needed
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      task.title,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        decoration: isCompleted ? TextDecoration.lineThrough : null,
-                        color: isCompleted ? Colors.grey : Colors.black,
+              )
+                  : ListView.builder(
+                itemCount: _visibleTasks.length,
+                itemBuilder: (context, index) {
+                  final task = _visibleTasks[index];
+                  return Card(
+                    margin: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    child: ListTile(
+                      title: Text(task.title),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Assigned by: ${task.assignedBy}'),
+                          Text('Priority: ${task.priority}'),
+                          Text('Deadline: ${task.deadline.toLocal().toString().split(' ')[0]}'),
+                        ],
+                      ),
+                      trailing: Chip(
+                        label: Text(task.status),
+                        backgroundColor: _getStatusColor(task.status),
                       ),
                     ),
-                  ),
-                  _buildPriorityBadge(task.priority),
-                ],
+                  );
+                },
               ),
-              const SizedBox(height: 8),
-              Text(
-                task.description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  decoration: isCompleted ? TextDecoration.lineThrough : null,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(Icons.person, size: 16, color: Colors.grey.shade600),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Assigned by: ${task.assignedBy}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(Icons.person_outline, size: 16, color: Colors.grey.shade600),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Assigned to: ${task.assignedTo}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.calendar_today, size: 16, color: Colors.grey.shade600),
-                      const SizedBox(width: 4),
-                      Text(
-                        deadline,
-                        style: TextStyle(
-                          color: isUrgent && !isCompleted ? Colors.red : Colors.grey.shade600,
-                          fontWeight: isUrgent && !isCompleted ? FontWeight.bold : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                  _buildStatusChip(task.status),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
-    );
-  }
-
-  Widget _buildPriorityBadge(String priority) {
-    Color color;
-    switch (priority) {
-      case 'High':
-        color = Colors.red;
-        break;
-      case 'Medium':
-        color = Colors.orange;
-        break;
-      case 'Low':
-        color = Colors.green;
-        break;
-      default:
-        color = Colors.grey;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Text(
-        priority,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusChip(String status) {
-    Color backgroundColor;
-    Color textColor;
-
-    switch (status.toLowerCase()) {
-      case 'completed':
-        backgroundColor = Colors.green.shade100;
-        textColor = Colors.green.shade800;
-        break;
-      case 'in progress':
-        backgroundColor = Colors.blue.shade100;
-        textColor = Colors.blue.shade800;
-        break;
-      case 'pending':
-        backgroundColor = Colors.orange.shade100;
-        textColor = Colors.orange.shade800;
-        break;
-      default:
-        backgroundColor = Colors.grey.shade100;
-        textColor = Colors.grey.shade800;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        status,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  Widget? _buildFloatingActionButton() {
-    if (widget.role == admin || widget.role == superAdmin) {
-      return FloatingActionButton.extended(
+      floatingActionButton: (widget.role == 'Admin' ||
+          widget.role == 'Team Leader' ||
+          widget.role == 'Super Admin')
+          ? FloatingActionButton(
         onPressed: () async {
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => AssignTaskPage(assigner: widget.username),
+              builder: (context) =>
+                  AssignTaskPage(assigner: widget.username),
             ),
           );
-          if (result == true) _loadTasks();
+          if (result == true) {
+            _loadTasks();
+          }
         },
-        icon: const Icon(Icons.add),
-        label: const Text('New Task'),
-        backgroundColor: Colors.blue,
-        elevation: 4,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-      );
+        child: const Icon(Icons.add),
+        tooltip: 'Assign Task',
+      )
+          : null,
+    );
+  }
+
+  // Build notifications panel
+  Widget _buildNotificationsPanel() {
+    return Container(
+      color: Colors.grey[200],
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: Text(
+              'Notifications',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (_notifications.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Text('No new notifications'),
+            )
+          else
+            ..._notifications.map((notification) => ListTile(
+              title: Text(notification),
+              dense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            )),
+        ],
+      ),
+    );
+  }
+
+  // Get status color for task chip
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return Colors.green[100]!;
+      case 'in progress':
+        return Colors.blue[100]!;
+      case 'pending':
+        return Colors.orange[100]!;
+      default:
+        return Colors.grey[100]!;
     }
-    return null;
   }
 }

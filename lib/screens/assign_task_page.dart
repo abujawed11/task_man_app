@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
+// Initialize the local notifications plugin
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
 // Global base URL for easy updates
-const String baseUrl = 'https://task-man-app-2.onrender.com';
+const String baseUrl = 'http://192.168.1.120:5000';
 
 class AssignTaskPage extends StatefulWidget {
   final String assigner;
@@ -28,8 +32,30 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
   @override
   void initState() {
     super.initState();
+    _initializeNotifications();
     _fetchUsers();
   }
+
+  // Initialize local notifications
+  Future<void> _initializeNotifications() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+    AndroidInitializationSettings('app_icon'); // Ensure 'app_icon' exists in android/app/src/main/res/drawable
+
+    const InitializationSettings initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+    );
+
+    await flutterLocalNotificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        // Handle notification tap (e.g., navigate to dashboard)
+        if (response.payload != null) {
+          print('Notification payload: ${response.payload}');
+        }
+      },
+    );
+  }
+
 
   Future<void> _fetchUsers() async {
     final response = await http.get(Uri.parse('$baseUrl/users'));
@@ -43,12 +69,7 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
 
   Future<void> _createTask() async {
     if (_selectedUser == null || _deadline == null || _titleController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please fill all fields'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
       return;
     }
 
@@ -81,10 +102,7 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
       Navigator.pop(context, true); // Return true to indicate success
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: Colors.redAccent,
-        ),
+        SnackBar(content: Text('Error: ${e.toString()}')),
       );
     } finally {
       setState(() => _isCreating = false);
@@ -109,8 +127,8 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
   }
 
   Future<void> _sendPushNotification(String token) async {
-    // Replace with your Firebase Server Key from Firebase Console
-    const String serverKey = 'YOUR_FIREBASE_SERVER_KEY'; // TODO: Store securely
+    // Replace with your Firebase Server Key from Firebase Console (Project Settings > Cloud Messaging)
+    const String serverKey = '966a8ef4648c77bf2f76cbb23dcd08a5694bd4d7'; // TODO: Store securely, preferably on backend
 
     final response = await http.post(
       Uri.parse('https://fcm.googleapis.com/fcm/send'),
@@ -135,223 +153,95 @@ class _AssignTaskPageState extends State<AssignTaskPage> {
     if (response.statusCode != 200) {
       print('Failed to send FCM message: ${response.body}');
     }
+
+    // 3. Send a local notification to the assigned user
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'task_channel_id',
+      'Task Notifications',
+      channelDescription: 'Notifications for new task assignments',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+
+    const NotificationDetails notificationDetails = NotificationDetails(
+      android: androidDetails,
+    );
+
+    await flutterLocalNotificationsPlugin.show(
+      0, // Notification ID
+      'New Task Assigned',
+      '${widget.assigner} assigned you a new task: ${_titleController.text}',
+      notificationDetails,
+      payload: 'new_task', // Payload to handle tap action
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Assign Task',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        elevation: 0,
-        backgroundColor: Theme.of(context).primaryColor,
-        foregroundColor: Colors.white,
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Theme.of(context).primaryColor.withOpacity(0.1),
-              Colors.white,
-            ],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Card(
-            elevation: 8,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: ListView(
-                children: [
-                  _buildTextField(
-                    controller: _titleController,
-                    label: 'Task Title',
-                    icon: Icons.title,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTextField(
-                    controller: _descController,
-                    label: 'Description',
-                    icon: Icons.description,
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildDropdownField(
-                    value: _selectedUser,
-                    items: _users,
-                    label: 'Assign To',
-                    icon: Icons.person,
-                    onChanged: (value) => setState(() => _selectedUser = value),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildDatePickerField(),
-                  const SizedBox(height: 16),
-                  _buildPriorityDropdown(),
-                  const SizedBox(height: 24),
-                  _buildCreateButton(),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    int maxLines = 1,
-  }) {
-    return TextFormField(
-      controller: controller,
-      maxLines: maxLines,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: Theme.of(context).primaryColor),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        filled: true,
-        fillColor: Colors.grey[100],
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      ),
-    );
-  }
-
-  Widget _buildDropdownField({
-    required String? value,
-    required List<String> items,
-    required String label,
-    required IconData icon,
-    required Function(String?) onChanged,
-  }) {
-    return DropdownButtonFormField<String>(
-      value: value,
-      items: items.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: Theme.of(context).primaryColor),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        filled: true,
-        fillColor: Colors.grey[100],
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      ),
-    );
-  }
-
-  Widget _buildDatePickerField() {
-    return InkWell(
-      onTap: () async {
-        final picked = await showDatePicker(
-          context: context,
-          initialDate: DateTime.now().add(const Duration(days: 1)),
-          firstDate: DateTime.now(),
-          lastDate: DateTime.now().add(const Duration(days: 365)),
-          builder: (context, child) {
-            return Theme(
-              data: Theme.of(context).copyWith(
-                colorScheme: ColorScheme.light(
-                  primary: Theme.of(context).primaryColor,
-                  onPrimary: Colors.white,
-                  surface: Colors.white,
-                ),
-                dialogBackgroundColor: Colors.white,
-              ),
-              child: child!,
-            );
-          },
-        );
-        if (picked != null) {
-          setState(() => _deadline = picked);
-        }
-      },
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: 'Deadline',
-          prefixIcon: Icon(Icons.calendar_today, color: Theme.of(context).primaryColor),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          filled: true,
-          fillColor: Colors.grey[100],
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      appBar: AppBar(title: const Text('Assign Task')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ListView(
           children: [
-            Text(
-              _deadline == null
-                  ? 'Select Date'
-                  : '${_deadline!.day}/${_deadline!.month}/${_deadline!.year}',
-              style: TextStyle(
-                color: _deadline == null ? Colors.grey : Colors.black87,
-              ),
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(labelText: 'Task Title'),
             ),
-            const Icon(Icons.arrow_drop_down, color: Colors.grey),
+            TextField(
+              controller: _descController,
+              decoration: const InputDecoration(labelText: 'Description'),
+              maxLines: 3,
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField(
+              value: _selectedUser,
+              items: _users.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+              onChanged: (value) => setState(() => _selectedUser = value),
+              decoration: const InputDecoration(labelText: 'Assign To'),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text('Deadline: '),
+                TextButton(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.now().add(const Duration(days: 1)),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null) {
+                      setState(() => _deadline = picked);
+                    }
+                  },
+                  child: Text(
+                    _deadline == null
+                        ? 'Select Date'
+                        : '${_deadline!.day}/${_deadline!.month}/${_deadline!.year}',
+                  ),
+                )
+              ],
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _priority,
+              items: ['High', 'Medium', 'Low']
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                  .toList(),
+              onChanged: (val) => setState(() => _priority = val!),
+              decoration: const InputDecoration(labelText: 'Priority'),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _isCreating ? null : _createTask,
+              child: _isCreating
+                  ? const CircularProgressIndicator()
+                  : const Text('Create Task'),
+            ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildPriorityDropdown() {
-    return DropdownButtonFormField<String>(
-      value: _priority,
-      items: ['High', 'Medium', 'Low']
-          .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-          .toList(),
-      onChanged: (val) => setState(() => _priority = val!),
-      decoration: InputDecoration(
-        labelText: 'Priority',
-        prefixIcon: Icon(Icons.priority_high, color: Theme.of(context).primaryColor),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        filled: true,
-        fillColor: Colors.grey[100],
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      ),
-    );
-  }
-
-  Widget _buildCreateButton() {
-    return ElevatedButton(
-      onPressed: _isCreating ? null : _createTask,
-      style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        backgroundColor: Theme.of(context).primaryColor,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        elevation: 4,
-        shadowColor: Theme.of(context).primaryColor.withOpacity(0.3),
-      ),
-      child: _isCreating
-          ? const SizedBox(
-        height: 20,
-        width: 20,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-        ),
-      )
-          : const Text(
-        'Create Task',
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
     );
   }
