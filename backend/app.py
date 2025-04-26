@@ -159,7 +159,71 @@ def get_users():
             conn.close()
 
 # ---------------- GET TASKS ----------------
+# @app.route('/tasks', methods=['GET'])
+# def get_tasks():
+#     conn = None
+#     cursor = None
+#     try:
+#         username = request.args.get('username')
+#         role = request.args.get('role')
 
+#         if not username or not role:
+#             return jsonify({'error': 'Missing username or role parameters'}), 400
+
+#         conn = mysql.connector.connect(**db_config)
+#         cursor = conn.cursor(dictionary=True)
+
+#         base_query = """
+#             SELECT 
+#                 t.task_id,
+#                 t.title,
+#                 t.description,
+#                 t.deadline,
+#                 t.priority,
+#                 t.status,
+#                 t.created_at,
+#                 assigner.username AS assigned_by,
+#                 assignee.username AS assigned_to
+#             FROM tasks t
+#             JOIN users assigner ON t.assigned_by = assigner.user_id
+#             JOIN users assignee ON t.assigned_to = assignee.user_id
+#         """
+
+#         if role in ['Admin', 'Super Admin']:
+#             query = f"{base_query} ORDER BY t.deadline ASC"
+#             cursor.execute(query)
+#         else:
+#             query = f"{base_query} WHERE assignee.username = %s ORDER BY t.deadline ASC"
+#             cursor.execute(query, (username,))
+
+#         tasks = cursor.fetchall()
+#         formatted_tasks = []
+#         for task in tasks:
+#             formatted_tasks.append({
+#                 'task_id': task['task_id'],
+#                 'title': task['title'],
+#                 'description': task['description'],
+#                 'deadline': task['deadline'].strftime('%Y-%m-%d') if task['deadline'] else None,
+#                 'priority': task['priority'],
+#                 'status': task['status'],
+#                 'assigned_by': task['assigned_by'],
+#                 'assigned_to': task['assigned_to'],
+#                 'created_at': task['created_at'].strftime('%Y-%m-%d %H:%M:%S') if task['created_at'] else None
+#             })
+
+#         return jsonify(formatted_tasks), 200
+
+#     except mysql.connector.Error as err:
+#         logger.error(f"Database error: {err}")
+#         return jsonify({'error': 'Database error'}), 500
+#     except Exception as e:
+#         logger.error(f"Unexpected error: {e}")
+#         return jsonify({'error': 'Server error'}), 500
+#     finally:
+#         if cursor:
+#             cursor.close()
+#         if conn:
+#             conn.close()
 
 @app.route('/tasks', methods=['GET'])
 def get_tasks():
@@ -172,13 +236,12 @@ def get_tasks():
             return jsonify({'error': 'Missing username or role parameters'}), 400
 
         # Create new database connection
-        # conn = mysql.connector.connect(
-        #     host="localhost",
-        #     user="root",
-        #     password="",
-        #     database="task_db"
-        # )
-        conn = mysql.connector.connect(**db_config)
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="",
+            database="task_db"
+        )
         cursor = conn.cursor(dictionary=True)
 
         # Base query
