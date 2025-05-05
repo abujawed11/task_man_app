@@ -1,7 +1,11 @@
+class Demo{
+
 public static void main(String args){
   String a = 89;
   String b = 78;
+  String c = "Hello Java";
 
 
+}
 
 }
